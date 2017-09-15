@@ -9,9 +9,9 @@
 #include <sys/un.h>
 
 int socket_id;
-void sigint_handler(int signum);
-void print_client_message(int client_socket);
+void print_client_message(int socketCliente);
 void end_server(void);
+void operacao(char *buffer, int socketCliente);
 
 int main (int argc, char* const argv[])
 {
@@ -54,9 +54,8 @@ int main (int argc, char* const argv[])
 	{
 		int socketCliente;
 		struct sockaddr_in clienteAddr;
-		unsigned int clienteLength;
+		unsigned int clienteLength = sizeof(clienteAddr);
 
-		clienteLength = sizeof(clienteAddr);
 
 		if((socketCliente = accept(socket_id, (struct sockaddr *) &clienteAddr, &clienteLength)) < 0)
 			printf("Falha no accept().\n");
@@ -68,31 +67,71 @@ int main (int argc, char* const argv[])
 	return 0;
 }
 
-void sigint_handler(int signum)
-{
-	end_server();
-}
 
-void print_client_message(int client_socket)
+void print_client_message(int socketCliente)
 {
 	int length;
-	char *text;
+	char *buffer;
 	/*Tamanho da mensagem*/
-	read(client_socket, &length, sizeof (length));
-
+	recv(socketCliente, &length, sizeof (length),0); //ler o tamanho da mensagem a ser recebida
+	buffer = (char*) malloc (length+1);
 	/*Criando string e recebendo mensagem*/
-	text = (char*) malloc (length);
-	read(client_socket, text, length);
+	recv(socketCliente, buffer, length, 0); //ler a mensagem
 
-	free (text);
-	if (!strcmp (text, "sair"))
-	{
-		end_server();
-	}
+	operacao(buffer, socketCliente);
 }
 
-void end_server(void)
+void operacao(char *buffer, int socketCliente)
 {
-	close(socket_id);
-	exit(0);
+	char op[3];
+	int result_i=0, flag_erro=0, erro = 0;
+	long long num1, num2;
+	sscanf(buffer, "%s %lld %lld", op, &num1, &num2);
+	printf("op = %s\nnum1 = %lld\nnum2 = %lld\n", op, num1, num2);
+
+	if(strcmp(op, "add") == 0)
+		result_i = num1 + num2;
+
+	else if(strcmp(op, "sub") == 0)
+		result_i = num1 - num2;
+
+	else if(strcmp(op, "div") == 0)
+	{
+
+		if(num2 == 0)
+		{
+			erro = 1;
+			flag_erro = 1;
+		}
+
+		else
+			result_i = num1/num2;
+	}
+
+	else if(strcmp(op, "mul") == 0)
+		result_i = num1 * num2;
+
+
+	else
+	{
+		flag_erro = 1;
+		erro = 2;
+	}
+
+	switch (flag_erro) {
+		case 0:
+				send(socketCliente, &flag_erro, sizeof(flag_erro), 0);
+				send(socketCliente, &result_i, sizeof(result_i), 0);
+		break;
+
+		case 1:
+		send(socketCliente, &flag_erro, sizeof(flag_erro), 0);
+		if(erro == 1)
+			send(socketCliente, &erro, sizeof(erro), 0);
+
+		else if(erro ==2)
+			send(socketCliente, &erro, sizeof(erro), 0);
+		break;
+	}
+	printf("Mensagem recebida: %s\nMensagem enviada: %d\n", buffer, result_i);
 }
