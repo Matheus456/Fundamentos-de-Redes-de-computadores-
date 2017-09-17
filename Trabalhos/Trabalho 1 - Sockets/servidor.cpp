@@ -1,24 +1,34 @@
-// Servidor Local
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <sys/un.h>
 
-int socket_id;
-void print_client_message(int socketCliente);
-void end_server(void);
-void operacao(char *buffer, int socketCliente);
+/* Bibliotecas para sockets */
+#include <sys/un.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <string.h>
+#include <unistd.h>
+
+
+#define PORTA 2000
+
+void Mensagem_Cliente(int socketCliente);
+void operacao(char *mensagem, int socketCliente);
 
 int main (int argc, char* const argv[])
 {
-	unsigned short servidorPorta;
+
+	int socket_id; /* descritor socket (para ler e escrever dados que foram abertos na comunicação) */
 	struct sockaddr_in servidorAddr;
 
-	servidorPorta = atoi(argv[1]);
+	/*
+	struct sockaddr_in {
+	short            sin_family;   // e.g. AF_INET (Familia)
+	unsigned short   sin_port;     // e.g. htons(3490) (Porta)
+	struct in_addr   sin_addr;     // see struct in_addr, below (IP)
+	char             sin_zero[8];  // zero this if you want to (Zera a estrutura)
+	};
+	*/
 
 	/*Criando o socket*/
 	socket_id = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -26,17 +36,23 @@ int main (int argc, char* const argv[])
 	/*Erro na criação do socket*/
 	if(socket_id < 0)
 	{
-		printf("Erro na criacao do socket!\n");
+		printf("Nao foi possivel criar o socket!\n");
 		exit(0);
 	}
-	printf("Feito!\n");
-	printf("Ligando o socket a porta %d... ", servidorPorta);
+
+	printf("Socket criado com sucesso!\nLigando o socket a porta %d.\n", PORTA);
 
 	/*Configurando o socket: Familia, Porta e endereço ip*/
 	memset(&servidorAddr, 0, sizeof(servidorAddr)); // Zerando a estrutura de dados
-	servidorAddr.sin_family = AF_INET;
+
+	servidorAddr.sin_family = AF_INET; /*Tipo de domínio*/
 	servidorAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-	servidorAddr.sin_port = htons(servidorPorta);
+	servidorAddr.sin_port = htons(PORTA);
+	/*
+	local.sin_addr.s_addr = inet_addr("192.168.254.1"); /*Com o uso do IP
+    htons -> host to network short, short trabalha com 2 bytes. Existe:
+    htonl -> long, entre outros...
+  */
 
 	/*Associando o endereço IP a uma porta*/
 	if(bind(socket_id, (struct sockaddr *) &servidorAddr, sizeof(servidorAddr)) < 0)
@@ -45,22 +61,21 @@ int main (int argc, char* const argv[])
 		exit(0);
 	}
 
+	/*Pode escutar até 10 portas por vez*/
 	if(listen(socket_id, 10) < 0)
-	{
 		exit(0);
-	}
 
 	while(1)
 	{
 		int socketCliente;
 		struct sockaddr_in clienteAddr;
-		unsigned int clienteLength = sizeof(clienteAddr);
+		unsigned int clientetamanho = sizeof(clienteAddr);
 
+		/* Iniciando uma conexão com o cliente */
+		if((socketCliente = accept(socket_id, (struct sockaddr *) &clienteAddr, &clientetamanho)) < 0)
+			printf("Erro na conexao com o cliente.\n");
 
-		if((socketCliente = accept(socket_id, (struct sockaddr *) &clienteAddr, &clienteLength)) < 0)
-			printf("Falha no accept().\n");
-
-		print_client_message(socketCliente);
+		Mensagem_Cliente(socketCliente);
 
 		close(socketCliente);
 	}
@@ -68,70 +83,78 @@ int main (int argc, char* const argv[])
 }
 
 
-void print_client_message(int socketCliente)
+void Mensagem_Cliente(int socketCliente)
 {
-	int length;
-	char *buffer;
-	/*Tamanho da mensagem*/
-	recv(socketCliente, &length, sizeof (length),0); //ler o tamanho da mensagem a ser recebida
-	buffer = (char*) malloc (length+1);
 	/*Criando string e recebendo mensagem*/
-	recv(socketCliente, buffer, length, 0); //ler a mensagem
+	int tamanho = 1000;
+	char mensagem[tamanho];
 
-	operacao(buffer, socketCliente);
+	recv(socketCliente, mensagem, tamanho, 0); //ler a mensagem
+	operacao(mensagem, socketCliente);
 }
 
-void operacao(char *buffer, int socketCliente)
+void operacao(char *mensagem, int socketCliente)
 {
 	char op[3];
-	int result_i=0, flag_erro=0, erro = 0;
-	long long num1, num2;
-	sscanf(buffer, "%s %lld %lld", op, &num1, &num2);
-	printf("op = %s\nnum1 = %lld\nnum2 = %lld\n", op, num1, num2);
-
-	if(strcmp(op, "add") == 0)
-		result_i = num1 + num2;
-
-	else if(strcmp(op, "sub") == 0)
-		result_i = num1 - num2;
-
-	else if(strcmp(op, "div") == 0)
+	int resultado_inteiro=0, flag_erro=0, erro = 0, erro_sscanf = 0;
+	int num1, num2;
+	erro_sscanf = sscanf(mensagem, "%s %d %d", op, &num1, &num2);
+	if(erro_sscanf == 3)
 	{
+		if(strcmp(op, "add") == 0)
+			resultado_inteiro = num1 + num2;
 
-		if(num2 == 0)
+		else if(strcmp(op, "sub") == 0)
+			resultado_inteiro = num1 - num2;
+
+		else if(strcmp(op, "div") == 0)
 		{
-			erro = 1;
-			flag_erro = 1;
+
+			if(num2 == 0)
+			{
+				erro = 1;
+				flag_erro = 1;
+			}
+
+			else
+				resultado_inteiro = num1/num2;
 		}
 
+		else if(strcmp(op, "mul") == 0)
+		resultado_inteiro = num1 * num2;
+
+
 		else
-			result_i = num1/num2;
+		{
+			flag_erro = 1;
+			erro = 2;
+		}
 	}
-
-	else if(strcmp(op, "mul") == 0)
-		result_i = num1 * num2;
-
 
 	else
 	{
+		erro = 3;
 		flag_erro = 1;
-		erro = 2;
 	}
 
-	switch (flag_erro) {
+	switch (flag_erro)
+	{
 		case 0:
 				send(socketCliente, &flag_erro, sizeof(flag_erro), 0);
-				send(socketCliente, &result_i, sizeof(result_i), 0);
+				send(socketCliente, &resultado_inteiro, sizeof(resultado_inteiro), 0);
 		break;
 
 		case 1:
-		send(socketCliente, &flag_erro, sizeof(flag_erro), 0);
-		if(erro == 1)
-			send(socketCliente, &erro, sizeof(erro), 0);
+			send(socketCliente, &flag_erro, sizeof(flag_erro), 0);
+			if(erro == 1) /*Erro de divisão por zero*/
+				send(socketCliente, &erro, sizeof(erro), 0);
 
-		else if(erro ==2)
-			send(socketCliente, &erro, sizeof(erro), 0);
+			else if(erro ==2)/*Erro de operação incorreta*/
+				send(socketCliente, &erro, sizeof(erro), 0);
+
+			else if(erro ==3)/*Erro de mensagem incompleta*/
+				send(socketCliente, &erro, sizeof(erro), 0);
 		break;
 	}
-	printf("Mensagem recebida: %s\nMensagem enviada: %d\n", buffer, result_i);
+	printf("Mensagem recebida: %s\nMensagem enviada: %d\n\n", mensagem, resultado_inteiro);
 }
